@@ -1,0 +1,10 @@
+gym==0.21.0
+gym_tetris==3.0.2
+gym_tetris.egg==info
+ipython==8.3.0
+matplotlib==3.3.4
+numpy==1.19.5
+psutil==5.9.0
+scipy==1.5.4
+torch==1.10.2
+tqdm==4.64.0
