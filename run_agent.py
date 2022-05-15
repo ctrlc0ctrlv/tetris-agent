@@ -127,9 +127,9 @@ def train(agent, env):
     # learning preparation
     timesteps_per_epoch = 1
     batch_size = 32
-    total_steps = 3 * 10 ** 4
-    decay_steps = 1 * 10 ** 3
-    opt = torch.optim.Adam(agent.parameters(), lr=3e-4)
+    total_steps = 20 * 10 ** 4
+    decay_steps = 7 * 10 ** 3
+    opt = torch.optim.Adam(agent.parameters(), lr=1e-3)
     init_epsilon = 1
     final_epsilon = 0.1
     loss_freq = 20
@@ -166,7 +166,7 @@ def train(agent, env):
             # train
             # <YOUR CODE: sample batch_size of data from experience replay>
             s, a, r, next_s, is_done = exp_replay.sample(batch_size)
-            print(s.shape)
+            # print(s.shape)
             # loss = <YOUR CODE: compute TD loss>
             loss = compute_td_loss(
                 s, a, r, next_s, is_done, agent, target_network
@@ -193,7 +193,7 @@ def train(agent, env):
                     evaluate(
                         make_env(seed=step),
                         agent,
-                        n_games=10,
+                        n_games=20,
                         greedy=True,
                         t_max=1000,
                     )
@@ -231,8 +231,8 @@ def train(agent, env):
                 plt.title("Grad norm history (smoothened)")
                 plt.plot(smoothen(grad_norm_history))
                 plt.grid()
-
-                plt.savefig(str(step) + ".png")
+                if step % 10000 == 0:
+                    plt.savefig(str(step) + ".png")
                 plt.close()
                 # plt.show()
 
@@ -258,7 +258,8 @@ if __name__ == "__main__":
     test_and_record_video(agent=agent, out_dir="./results")
 
     # testing everything
-    test_code(agent=agent, env=env)
+    # disable to speed up
+    # test_code(agent=agent, env=env)
 
     # filling replay buffer
     REPLAY_BUFFER_SIZE = 10 ** 4

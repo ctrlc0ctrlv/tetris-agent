@@ -21,21 +21,28 @@ class DQNAgent(nn.Module):
     def __init__(self, state_shape, n_actions, epsilon=0):
         super().__init__()
         self.epsilon = epsilon
-        self.n_actions = n_actions
+        self.n_actions = n_actions  # n_actions = 6
         self.state_shape = state_shape
         assert len(state_shape) == 1
         state_dim = state_shape[0]
-        hidden_size_1 = 100
-        hidden_size_2 = 50
+        hidden_size_1 = 200
+        hidden_size_2 = 128
+        hidden_size_3 = 76
+        hidden_size_4 = 24
+        # hidden_size_5 = 12
         self._nn = nn.Sequential(
             nn.Linear(state_dim, hidden_size_1),
-            nn.ReLU(),
-            # nn.InstanceNorm1d(hidden_size_1),
+            nn.Tanh(),
             nn.Linear(hidden_size_1, hidden_size_2),
-            nn.ReLU(),
-            # nn.InstanceNorm1d(hidden_size_2),
-            nn.Linear(hidden_size_2, n_actions),
-            nn.ReLU(),
+            nn.Tanh(),
+            nn.Linear(hidden_size_2, hidden_size_3),
+            nn.Tanh(),
+            nn.Linear(hidden_size_3, hidden_size_4),
+            nn.Tanh(),
+            # nn.Linear(hidden_size_4, hidden_size_5),
+            # nn.Tanh(),
+            nn.Linear(hidden_size_4, n_actions),
+            nn.Tanh(),
         )
 
     def forward(self, state_t):
