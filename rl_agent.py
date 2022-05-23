@@ -5,9 +5,11 @@
 """
 
 
+from os import stat
 import numpy as np
 import torch
 from torch import nn
+import torch.nn.functional as F
 import logging
 from gym.wrappers.monitoring import video_recorder, stats_recorder
 import gym_tetris
@@ -23,27 +25,30 @@ class DQNAgent(nn.Module):
         self.epsilon = epsilon
         self.n_actions = n_actions  # n_actions = 6
         self.state_shape = state_shape
-        assert len(state_shape) == 1
+        assert len(state_shape) == 2
         state_dim = state_shape[0]
-        hidden_size_1 = 200
+        hidden_size_1 = 256
         hidden_size_2 = 128
-        hidden_size_3 = 76
-        hidden_size_4 = 24
+        # hidden_size_3 = 76
+        # hidden_size_4 = 24
         # hidden_size_5 = 12
-        self._nn = nn.Sequential(
-            nn.Linear(state_dim, hidden_size_1),
-            nn.Tanh(),
-            nn.Linear(hidden_size_1, hidden_size_2),
-            nn.Tanh(),
-            nn.Linear(hidden_size_2, hidden_size_3),
-            nn.Tanh(),
-            nn.Linear(hidden_size_3, hidden_size_4),
-            nn.Tanh(),
-            # nn.Linear(hidden_size_4, hidden_size_5),
-            # nn.Tanh(),
-            nn.Linear(hidden_size_4, n_actions),
-            nn.Tanh(),
-        )
+        # self._nn = nn.Sequential(
+        # nn.Linear(state_dim, hidden_size_1),
+        # nn.ReLU(),
+        # nn.Linear(hidden_size_1, hidden_size_2),
+        # nn.ReLU(),
+        # nn.Linear(hidden_size_2, hidden_size_3),
+        # nn.ReLU(),
+        # nn.Linear(hidden_size_3, hidden_size_4),
+        # nn.ReLU(),
+        # nn.Linear(hidden_size_4, hidden_size_5),
+        # nn.ReLU(),
+        # nn.Linear(hidden_size_2, n_actions),
+        # nn.ReLU(),
+        # )
+        self.conv1 = nn.Conv2d(1, 5, 3)
+        self.fc1 = nn.Linear(1 * 5 * 4 * 4, 64)
+        self.fc2 = nn.Linear(64, n_actions)
 
     def forward(self, state_t):
         """
@@ -54,8 +59,19 @@ class DQNAgent(nn.Module):
                 shape = [batch_size, *state_dim=200]
         """
         # Use your network to compute qvalues for given state
-        qvalues = self._nn(state_t)
+        # qvalues = self._nn(state_t)
         # print(f"qvalues shape: {qvalues.shape}")
+
+        if len(state_t.shape) == 2:
+            state_t = state_t[None, None, ::, ::]
+        elif len(state_t.shape) == 3:
+            state_t = state_t[None, ::, ::, ::]
+        x = F.max_pool2d(F.relu(self.conv1(state_t)), 2)
+        x = torch.flatten(
+            x, 1
+        )  # flatten all dimensions except the batch dimension
+        x = F.relu(self.fc1(x))
+        qvalues = self.fc2(x)
 
         assert (
             qvalues.requires_grad
@@ -102,9 +118,11 @@ def evaluate(env, agent, n_games=1, greedy=False, t_max=10000):
         Returns mean reward
     """
     rewards = []
+    times = []
     for _ in range(n_games):
         s = env.reset()
         reward = 0
+        time = 0
         for _ in range(t_max):
             qvalues = agent.get_qvalues(np.asarray([s]))
             action = (
@@ -114,12 +132,14 @@ def evaluate(env, agent, n_games=1, greedy=False, t_max=10000):
             )
             s, r, done, _ = env.step(action)
             reward += r
+            time += 1
             if done:
                 break
-
         rewards.append(reward)
+        times.append(time)
     rewards = np.array([rewards])
-    return np.mean(rewards)
+    times = np.array([times])
+    return np.mean(rewards), np.mean(times)
 
 
 def play_and_record(initial_state, agent, env, exp_replay, n_steps=1):
@@ -139,18 +159,40 @@ def play_and_record(initial_state, agent, env, exp_replay, n_steps=1):
 
     for _ in range(n_steps):
         qvalues = agent.get_qvalues([s])
-
         action = agent.sample_actions(qvalues)[0]
         # action = action.argmax(axis=-1)[0]
         state, reward, done, _ = env.step(action)
         sum_rewards += reward
-
         exp_replay.add(s, action, reward, state, done)
-
         if done:
             state = env.reset()
         s = state
+    return sum_rewards, s
 
+
+def play_and_record_success(initial_state, agent, env, exp_replay, n_steps=1):
+    """
+        Records only success games
+    """
+    s = initial_state
+    sum_rewards = 0
+    counter = 0
+    while counter < n_steps:
+        qvalues = agent.get_qvalues([s])
+        action = agent.sample_actions(qvalues)[0]
+        # action = action.argmax(axis=-1)[0]
+        state, reward, done, _ = env.step(action)
+        sum_rewards += reward
+        if reward > 0:
+            exp_replay.add(
+                s.tolist(), action, reward, state.tolist(), done,
+            )
+            counter += 1
+            print("added success")
+        # temp.append(s, action, reward, state, done)
+        if done:
+            state = env.reset()
+        s = state
     return sum_rewards, s
 
 
@@ -169,30 +211,50 @@ def compute_td_loss(
     """
         Compute td loss using torch operations only. Use the formulae above
     """
-    states = torch.tensor(
-        states, device=device, dtype=torch.float32
-    )  # shape: [batch_size, *state_shape]
+    # states = torch.tensor(
+    # states, device=device, dtype=torch.float32
+    # )  # shape: [batch_size, *state_shape]
+    # print(states[0], states.dtype)
+    # states = torch.from_numpy(states.astype(np.float32)).type(torch.float32)
+
     actions = torch.tensor(
-        actions, device=device, dtype=torch.int64
+        actions, device=device, dtype=torch.long
     )  # shape: [batch_size]
     rewards = torch.tensor(
         rewards, device=device, dtype=torch.float32
     )  # shape: [batch_size]
     # shape: [batch_size, *state_shape]
-    next_states = torch.tensor(next_states, device=device, dtype=torch.float)
+    try:
+        next_states = torch.tensor(
+            next_states, device=device, dtype=torch.int32
+        )
+    except TypeError:
+        print(next_states, next_states.dtype)
     is_done = torch.tensor(
-        is_done.astype("float32"), device=device, dtype=torch.float32,
+        is_done.astype("float32"), device=device, dtype=torch.int32,
     )  # shape: [batch_size]
     is_not_done = 1 - is_done
 
     # get q-values for all actions in current states
-    predicted_qvalues = agent(states)  # shape: [batch_size, n_actions]
+    # predicted_qvalues = agent(states)  # shape: [batch_size, n_actions]
+    predicted_qvalues = torch.empty((32, 6))
+    # print(states[0], states[0].dtype)
+    for ind, item in enumerate(states):
+        try:
+            predicted_qvalues[ind] = agent(
+                torch.tensor(item, dtype=torch.float32, device=device)
+            )
+        except TypeError:
+            print(item, item.dtype)
 
     # compute q-values for all actions in next states
     # with torch.no_grad():
-    predicted_next_qvalues = target_network(
-        next_states
-    )  # shape: [batch_size, n_actions]
+    # predicted_next_qvalues = target_network(
+    # next_states
+    # )  # shape: [batch_size, n_actions]
+    predicted_next_qvalues = torch.empty((32, 6))
+    for ind, item in enumerate(next_states):
+        predicted_next_qvalues[ind] = target_network(item.to(torch.float32))
 
     # select q-values for chosen actions
     predicted_qvalues_for_actions = predicted_qvalues[
@@ -270,6 +332,7 @@ def test_and_record_video(
     MAX_STEPS = 200
     reward = 0
     done = False
+    times = []
 
     for i in range(EPISODE_COUNT):
         stats.before_reset()
@@ -277,6 +340,7 @@ def test_and_record_video(
         # print(ob)
         stats.after_reset(ob)
 
+        time = 0
         # for j in range(MAX_STEPS):
         while True:
             qvalues = agent.get_qvalues(np.asarray([ob]))
@@ -292,6 +356,7 @@ def test_and_record_video(
             stats.after_step(
                 observation=ob, reward=reward, done=done, info=info
             )
+            time += 1
             if done:
                 # ob = env.reset()
                 break
@@ -302,6 +367,7 @@ def test_and_record_video(
             # Video is not recorded every episode,
             # see capped_cubic_video_schedule for details.
         stats.save_complete()
+        times.append(time)
 
     # Dump result info to disk
     vid.close()
@@ -312,3 +378,4 @@ def test_and_record_video(
     # Upload to the scoreboard. We could also do this from another
     # process if we wanted.
     # gym.gym.upload(out_dir)
+    return np.mean(np.asarray(times))

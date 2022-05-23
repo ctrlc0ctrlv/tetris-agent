@@ -6,6 +6,7 @@
 
 from rl_agent import (
     play_and_record,
+    play_and_record_success,
     DQNAgent,
     compute_td_loss,
     evaluate,
@@ -22,6 +23,18 @@ from tqdm import trange
 from IPython.display import clear_output
 import numpy as np
 import gym
+import json
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
 
 
 def test_code(agent, env):
@@ -74,7 +87,6 @@ def test_code(agent, env):
         assert [
             0 <= a < n_actions for a in act_batch
         ], "actions should be within [0, n_actions)"
-
     print("Test success!")
 
 
@@ -102,6 +114,30 @@ def fill_replay_buffer(env, agent, size):
     return exp_replay
 
 
+def fill_replay_buffer_success(env, agent, size):
+    exp_replay = replay_buffer.ReplayBuffer(size)
+    step = 0
+    total_steps = 10
+    with trange(step, total_steps + 1) as progress_bar:
+        for step in progress_bar:
+            if not is_enough_ram(min_available_gb=0.1):
+                print(
+                    """
+                    Less than 100 Mb RAM available.
+                    Make sure the buffer size in not too huge.
+                    Also check, maybe other processes consume RAM heavily.
+                    """
+                )
+                break
+            play_and_record_success(state, agent, env, exp_replay, n_steps=10)
+            if len(exp_replay) == size:
+                break
+    with open("replays.txt", "w") as fw:
+        json.dump(exp_replay._storage, fw, cls=NpEncoder)
+    print("Buffer filled success!")
+    return exp_replay
+
+
 def make_env(seed=0):
     env = gym_tetris.TetrisEnv()
     env.seed = seed
@@ -123,13 +159,13 @@ def smoothen(values):
     return fftconvolve(values, kernel, "valid")
 
 
-def train(agent, env):
+def train(agent, env, MEAN_TIME):
     # learning preparation
     timesteps_per_epoch = 1
     batch_size = 32
-    total_steps = 20 * 10 ** 4
-    decay_steps = 7 * 10 ** 3
-    opt = torch.optim.Adam(agent.parameters(), lr=1e-3)
+    total_steps = 10 * 10 ** 4
+    decay_steps = 5 * 10 ** 3
+    opt = torch.optim.Adam(agent.parameters(), lr=5e-4)
     init_epsilon = 1
     final_epsilon = 0.1
     loss_freq = 20
@@ -137,6 +173,7 @@ def train(agent, env):
     eval_freq = 1000
     max_grad_norm = 5000
     mean_rw_history = []
+    mean_time_history = []
     td_loss_history = []
     grad_norm_history = []
     initial_state_v_history = []
@@ -166,10 +203,10 @@ def train(agent, env):
             # train
             # <YOUR CODE: sample batch_size of data from experience replay>
             s, a, r, next_s, is_done = exp_replay.sample(batch_size)
-            # print(s.shape)
+            # print(s.shape, "\n", s[0])
             # loss = <YOUR CODE: compute TD loss>
             loss = compute_td_loss(
-                s, a, r, next_s, is_done, agent, target_network
+                s, a, r, next_s, is_done, agent, target_network,
             )
 
             loss.backward()
@@ -189,15 +226,16 @@ def train(agent, env):
                 target_network.load_state_dict(agent.state_dict())
 
             if step % eval_freq == 0:
-                mean_rw_history.append(
-                    evaluate(
-                        make_env(seed=step),
-                        agent,
-                        n_games=20,
-                        greedy=True,
-                        t_max=1000,
-                    )
+                score, time = evaluate(
+                    make_env(seed=step),
+                    agent,
+                    n_games=10,
+                    greedy=True,
+                    t_max=1000,
                 )
+                mean_rw_history.append(score)
+                mean_time_history.append(time)
+
                 initial_state_q_values = agent.get_qvalues(
                     [make_env(seed=step).reset()]
                 )
@@ -222,23 +260,30 @@ def train(agent, env):
                 plt.plot(smoothen(td_loss_history))
                 plt.grid()
 
+                # plt.subplot(2, 2, 3)
+                # plt.title("Initial state V")
+                # plt.plot(initial_state_v_history)
+                # plt.grid()
+
                 plt.subplot(2, 2, 3)
-                plt.title("Initial state V")
-                plt.plot(initial_state_v_history)
+                plt.title("Mean length of episode")
+                plt.plot(mean_time_history)
+                plt.axhline(y=MEAN_TIME, color='r', linestyle='-')
                 plt.grid()
 
                 plt.subplot(2, 2, 4)
                 plt.title("Grad norm history (smoothened)")
                 plt.plot(smoothen(grad_norm_history))
                 plt.grid()
-                if step % 10000 == 0:
-                    plt.savefig(str(step) + ".png")
+                if step % 1000 == 0:
+                    plt.savefig("plot.png")
                 plt.close()
                 # plt.show()
 
 
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cpu"
     # now device == "cpu"
 
     # preparation
@@ -255,7 +300,7 @@ if __name__ == "__main__":
     env.spec.max_episode_steps = 200
 
     # video time!
-    test_and_record_video(agent=agent, out_dir="./results")
+    MEAN_TIME = test_and_record_video(agent=agent, out_dir="./results")
 
     # testing everything
     # disable to speed up
@@ -266,8 +311,15 @@ if __name__ == "__main__":
     exp_replay = fill_replay_buffer(
         agent=agent, env=env, size=REPLAY_BUFFER_SIZE
     )
+    # exp_replay = fill_replay_buffer_success(
+        # agent=agent, env=env, size=REPLAY_BUFFER_SIZE
+    # )
+    with open("replays.txt", "r") as fr:
+        success = json.load(fr)
+        for item in success:
+            exp_replay.add(*item)
 
-    train(agent=agent, env=env)
+    train(agent=agent, env=env, MEAN_TIME=MEAN_TIME)
 
     # video time!
     test_and_record_video(agent=target_network, out_dir="./results_learned")
