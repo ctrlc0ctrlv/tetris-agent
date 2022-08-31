@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-
 """
     RL agent usage
+
+    note: needed external library psutil
+    installation: pip install psutil
 """
 
 from rl_agent import (
@@ -27,6 +29,7 @@ import json
 
 
 class NpEncoder(json.JSONEncoder):
+
     def default(self, obj):
         if isinstance(obj, np.integer):
             return int(obj)
@@ -49,8 +52,7 @@ def test_code(agent, env):
     # just make sure you know what your code does
     assert len(exp_replay) == 1000, (
         "play_and_record should have added exactly 1000 steps, "
-        "but instead added %i" % len(exp_replay)
-    )
+        "but instead added %i" % len(exp_replay))
     is_dones = list(zip(*exp_replay._storage))[-1]
 
     # assert 0 < np.mean(is_dones) < 0.1, \
@@ -68,44 +70,37 @@ def test_code(agent, env):
             is_done_batch,
         ) = exp_replay.sample(10)
         # print(obs_batch.shape, next_obs_batch.shape, (10,) + state_shape)
-        assert obs_batch.shape == next_obs_batch.shape == (10,) + state_shape
-        assert act_batch.shape == (10,), (
-            "actions batch should have shape (10,) but is instead %s"
-            % str(act_batch.shape)
-        )
-        assert reward_batch.shape == (10,), (
-            "rewards batch should have shape (10,) but is instead %s"
-            % str(reward_batch.shape)
-        )
-        assert is_done_batch.shape == (10,), (
-            "is_done batch should have shape (10,) but is instead %s"
-            % str(is_done_batch.shape)
-        )
-        assert [
-            int(i) in (0, 1) for i in is_dones
-        ], "is_done should be strictly True or False"
-        assert [
-            0 <= a < n_actions for a in act_batch
-        ], "actions should be within [0, n_actions)"
+        assert obs_batch.shape == next_obs_batch.shape == (10, ) + state_shape
+        assert act_batch.shape == (
+            10, ), ("actions batch should have shape (10,) but is instead %s" %
+                    str(act_batch.shape))
+        assert reward_batch.shape == (
+            10, ), ("rewards batch should have shape (10,) but is instead %s" %
+                    str(reward_batch.shape))
+        assert is_done_batch.shape == (
+            10, ), ("is_done batch should have shape (10,) but is instead %s" %
+                    str(is_done_batch.shape))
+        assert [int(i) in (0, 1)
+                for i in is_dones], "is_done should be strictly True or False"
+        assert [0 <= a < n_actions
+                for a in act_batch], "actions should be within [0, n_actions)"
     print("Test success!")
 
 
 def is_enough_ram(min_available_gb=0.1):
     mem = psutil.virtual_memory()
-    return mem.available >= min_available_gb * (1024 ** 3)
+    return mem.available >= min_available_gb * (1024**3)
 
 
 def fill_replay_buffer(env, agent, size):
     exp_replay = replay_buffer.ReplayBuffer(size)
     for _ in range(100):
         if not is_enough_ram(min_available_gb=0.1):
-            print(
-                """
+            print("""
                 Less than 100 Mb RAM available.
                 Make sure the buffer size in not too huge.
                 Also check, maybe other processes consume RAM heavily.
-                """
-            )
+                """)
             break
         play_and_record(state, agent, env, exp_replay, n_steps=1000)
         if len(exp_replay) == size:
@@ -117,23 +112,21 @@ def fill_replay_buffer(env, agent, size):
 def fill_replay_buffer_success(env, agent, size):
     exp_replay = replay_buffer.ReplayBuffer(size)
     step = 0
-    total_steps = 10
+    total_steps = 20
     with trange(step, total_steps + 1) as progress_bar:
         for step in progress_bar:
             if not is_enough_ram(min_available_gb=0.1):
-                print(
-                    """
+                print("""
                     Less than 100 Mb RAM available.
                     Make sure the buffer size in not too huge.
                     Also check, maybe other processes consume RAM heavily.
-                    """
-                )
+                    """)
                 break
             play_and_record_success(state, agent, env, exp_replay, n_steps=10)
             if len(exp_replay) == size:
                 break
-    with open("replays.txt", "w") as fw:
-        json.dump(exp_replay._storage, fw, cls=NpEncoder)
+            with open(f"replays_long_{step}.txt", "a") as fw:
+                json.dump(exp_replay._storage, fw, cls=NpEncoder)
     print("Buffer filled success!")
     return exp_replay
 
@@ -147,9 +140,8 @@ def make_env(seed=0):
 def linear_decay(init_val, final_val, cur_step, total_steps):
     if cur_step >= total_steps:
         return final_val
-    return (
-        init_val * (total_steps - cur_step) + final_val * cur_step
-    ) / total_steps
+    return (init_val *
+            (total_steps - cur_step) + final_val * cur_step) / total_steps
 
 
 def smoothen(values):
@@ -163,8 +155,8 @@ def train(agent, env, MEAN_TIME):
     # learning preparation
     timesteps_per_epoch = 1
     batch_size = 32
-    total_steps = 10 * 10 ** 4
-    decay_steps = 5 * 10 ** 3
+    total_steps = 10 * 10**4
+    decay_steps = 5 * 10**3
     opt = torch.optim.Adam(agent.parameters(), lr=5e-4)
     init_epsilon = 1
     final_epsilon = 0.1
@@ -191,14 +183,12 @@ def train(agent, env, MEAN_TIME):
                 # wait_for_keyboard_interrupt()
                 break
 
-            agent.epsilon = linear_decay(
-                init_epsilon, final_epsilon, step, decay_steps
-            )
+            agent.epsilon = linear_decay(init_epsilon, final_epsilon, step,
+                                         decay_steps)
 
             # play
-            _, state = play_and_record(
-                state, agent, env, exp_replay, timesteps_per_epoch
-            )
+            _, state = play_and_record(state, agent, env, exp_replay,
+                                       timesteps_per_epoch)
 
             # train
             # <YOUR CODE: sample batch_size of data from experience replay>
@@ -206,13 +196,18 @@ def train(agent, env, MEAN_TIME):
             # print(s.shape, "\n", s[0])
             # loss = <YOUR CODE: compute TD loss>
             loss = compute_td_loss(
-                s, a, r, next_s, is_done, agent, target_network,
+                s,
+                a,
+                r,
+                next_s,
+                is_done,
+                agent,
+                target_network,
             )
 
             loss.backward()
-            grad_norm = nn.utils.clip_grad_norm_(
-                agent.parameters(), max_grad_norm
-            )
+            grad_norm = nn.utils.clip_grad_norm_(agent.parameters(),
+                                                 max_grad_norm)
             opt.step()
             opt.zero_grad()
 
@@ -237,8 +232,7 @@ def train(agent, env, MEAN_TIME):
                 mean_time_history.append(time)
 
                 initial_state_q_values = agent.get_qvalues(
-                    [make_env(seed=step).reset()]
-                )
+                    [make_env(seed=step).reset()])
                 initial_state_v_history.append(np.max(initial_state_q_values))
 
                 clear_output(True)
@@ -268,7 +262,7 @@ def train(agent, env, MEAN_TIME):
                 plt.subplot(2, 2, 3)
                 plt.title("Mean length of episode")
                 plt.plot(mean_time_history)
-                plt.axhline(y=MEAN_TIME, color='r', linestyle='-')
+                plt.axhline(y=MEAN_TIME, color="r", linestyle="-")
                 plt.grid()
 
                 plt.subplot(2, 2, 4)
@@ -287,7 +281,7 @@ if __name__ == "__main__":
     # now device == "cpu"
 
     # preparation
-    SEED = 2
+    SEED = 13
     # env = gym_tetris.TetrisEnv()
     env = gym.make("Tetris-v0")
     env.seed = SEED
@@ -307,14 +301,18 @@ if __name__ == "__main__":
     # test_code(agent=agent, env=env)
 
     # filling replay buffer
-    REPLAY_BUFFER_SIZE = 10 ** 4
-    exp_replay = fill_replay_buffer(
-        agent=agent, env=env, size=REPLAY_BUFFER_SIZE
-    )
+    REPLAY_BUFFER_SIZE = 10**4
+    exp_replay = fill_replay_buffer(agent=agent,
+                                    env=env,
+                                    size=REPLAY_BUFFER_SIZE)
     # exp_replay = fill_replay_buffer_success(
-        # agent=agent, env=env, size=REPLAY_BUFFER_SIZE
+    # agent=agent, env=env, size=REPLAY_BUFFER_SIZE
     # )
     with open("replays.txt", "r") as fr:
+        success = json.load(fr)
+        for item in success:
+            exp_replay.add(*item)
+    with open("replays_long_20.txt", "r") as fr:
         success = json.load(fr)
         for item in success:
             exp_replay.add(*item)

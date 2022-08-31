@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 """
     ReplayBuffer class
 """
@@ -13,6 +12,7 @@ import random
 
 
 class ReplayBuffer(object):
+
     def __init__(self, size):
         """Create Replay buffer.
         Parameters
@@ -76,7 +76,7 @@ class ReplayBuffer(object):
             the end of an episode and 0 otherwise.
         """
         idxes = [
-            random.randint(0, len(self._storage) - 1)
-            for _ in range(batch_size)
+            random.randint(0,
+                           len(self._storage) - 1) for _ in range(batch_size)
         ]
         return self._encode_sample(idxes)

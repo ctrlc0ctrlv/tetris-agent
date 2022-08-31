@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
-
 """
     RL agent for tetris gym environment
 """
 
-
-from os import stat
+# from os import stat
 import numpy as np
 import torch
 from torch import nn
@@ -26,12 +24,13 @@ class DQNAgent(nn.Module):
         self.n_actions = n_actions  # n_actions = 6
         self.state_shape = state_shape
         assert len(state_shape) == 2
-        state_dim = state_shape[0]
-        hidden_size_1 = 256
-        hidden_size_2 = 128
+        # state_dim = state_shape[0]
+        # hidden_size_1 = 256
+        # hidden_size_2 = 128
         # hidden_size_3 = 76
         # hidden_size_4 = 24
         # hidden_size_5 = 12
+
         # self._nn = nn.Sequential(
         # nn.Linear(state_dim, hidden_size_1),
         # nn.ReLU(),
@@ -47,8 +46,8 @@ class DQNAgent(nn.Module):
         # nn.ReLU(),
         # )
         self.conv1 = nn.Conv2d(1, 5, 3)
-        self.fc1 = nn.Linear(1 * 5 * 4 * 4, 64)
-        self.fc2 = nn.Linear(64, n_actions)
+        self.fc1 = nn.Linear(1 * 5 * 4 * 4, 128)
+        self.fc2 = nn.Linear(128, n_actions)
 
     def forward(self, state_t):
         """
@@ -68,19 +67,15 @@ class DQNAgent(nn.Module):
             state_t = state_t[None, ::, ::, ::]
         x = F.max_pool2d(F.relu(self.conv1(state_t)), 2)
         x = torch.flatten(
-            x, 1
-        )  # flatten all dimensions except the batch dimension
+            x, 1)  # flatten all dimensions except the batch dimension
         x = F.relu(self.fc1(x))
         qvalues = self.fc2(x)
 
         assert (
-            qvalues.requires_grad
-        ), "qvalues must be a torch tensor with grad"
-        assert (
-            len(qvalues.shape) == 2
-            and qvalues.shape[0] == state_t.shape[0]
-            and qvalues.shape[1] == self.n_actions
-        )
+            qvalues.requires_grad), "qvalues must be a torch tensor with grad"
+        assert (len(qvalues.shape) == 2
+                and qvalues.shape[0] == state_t.shape[0]
+                and qvalues.shape[1] == self.n_actions)
 
         return qvalues
 
@@ -89,9 +84,9 @@ class DQNAgent(nn.Module):
             Like forward, but works on numpy arrays, not tensors
         """
         model_device = next(self.parameters()).device
-        states = torch.tensor(
-            np.asarray(states), device=model_device, dtype=torch.float32
-        )
+        states = torch.tensor(np.asarray(states),
+                              device=model_device,
+                              dtype=torch.float32)
         qvalues = self.forward(states)
         return qvalues.data.cpu().numpy()
 
@@ -106,9 +101,9 @@ class DQNAgent(nn.Module):
         random_actions = np.random.choice(n_actions, size=batch_size)
         best_actions = qvalues.argmax(axis=-1)
 
-        should_explore = np.random.choice(
-            [0, 1], batch_size, p=[1 - epsilon, epsilon]
-        )
+        should_explore = np.random.choice([0, 1],
+                                          batch_size,
+                                          p=[1 - epsilon, epsilon])
         return np.where(should_explore, random_actions, best_actions)
 
 
@@ -125,11 +120,8 @@ def evaluate(env, agent, n_games=1, greedy=False, t_max=10000):
         time = 0
         for _ in range(t_max):
             qvalues = agent.get_qvalues(np.asarray([s]))
-            action = (
-                qvalues.argmax(axis=-1)[0]
-                if greedy
-                else agent.sample_actions(qvalues)[0]
-            )
+            action = (qvalues.argmax(
+                axis=-1)[0] if greedy else agent.sample_actions(qvalues)[0])
             s, r, done, _ = env.step(action)
             reward += r
             time += 1
@@ -185,7 +177,11 @@ def play_and_record_success(initial_state, agent, env, exp_replay, n_steps=1):
         sum_rewards += reward
         if reward > 0:
             exp_replay.add(
-                s.tolist(), action, reward, state.tolist(), done,
+                s.tolist(),
+                action,
+                reward,
+                state.tolist(),
+                done,
             )
             counter += 1
             print("added success")
@@ -197,16 +193,16 @@ def play_and_record_success(initial_state, agent, env, exp_replay, n_steps=1):
 
 
 def compute_td_loss(
-    states,
-    actions,
-    rewards,
-    next_states,
-    is_done,
-    agent,
-    target_network,
-    gamma=0.99,
-    check_shapes=False,
-    device=torch.device("cpu"),
+        states,
+        actions,
+        rewards,
+        next_states,
+        is_done,
+        agent,
+        target_network,
+        gamma=0.99,
+        check_shapes=False,
+        device=torch.device("cpu"),
 ):
     """
         Compute td loss using torch operations only. Use the formulae above
@@ -217,21 +213,21 @@ def compute_td_loss(
     # print(states[0], states.dtype)
     # states = torch.from_numpy(states.astype(np.float32)).type(torch.float32)
 
-    actions = torch.tensor(
-        actions, device=device, dtype=torch.long
-    )  # shape: [batch_size]
-    rewards = torch.tensor(
-        rewards, device=device, dtype=torch.float32
-    )  # shape: [batch_size]
+    actions = torch.tensor(actions, device=device,
+                           dtype=torch.long)  # shape: [batch_size]
+    rewards = torch.tensor(rewards, device=device,
+                           dtype=torch.float32)  # shape: [batch_size]
     # shape: [batch_size, *state_shape]
     try:
-        next_states = torch.tensor(
-            next_states, device=device, dtype=torch.int32
-        )
+        next_states = torch.tensor(next_states,
+                                   device=device,
+                                   dtype=torch.int32)
     except TypeError:
         print(next_states, next_states.dtype)
     is_done = torch.tensor(
-        is_done.astype("float32"), device=device, dtype=torch.int32,
+        is_done.astype("float32"),
+        device=device,
+        dtype=torch.int32,
     )  # shape: [batch_size]
     is_not_done = 1 - is_done
 
@@ -242,8 +238,7 @@ def compute_td_loss(
     for ind, item in enumerate(states):
         try:
             predicted_qvalues[ind] = agent(
-                torch.tensor(item, dtype=torch.float32, device=device)
-            )
+                torch.tensor(item, dtype=torch.float32, device=device))
         except TypeError:
             print(item, item.dtype)
 
@@ -257,52 +252,50 @@ def compute_td_loss(
         predicted_next_qvalues[ind] = target_network(item.to(torch.float32))
 
     # select q-values for chosen actions
-    predicted_qvalues_for_actions = predicted_qvalues[
-        range(len(actions)), actions
-    ]  # shape: [batch_size]
+    predicted_qvalues_for_actions = predicted_qvalues[range(
+        len(actions)), actions]  # shape: [batch_size]
 
     # compute V*(next_states) using predicted next q-values
     # next_state_values = <YOUR CODE>
     next_state_values = predicted_next_qvalues.max(axis=-1)[0]
 
-    assert (
-        next_state_values.dim() == 1
-        and next_state_values.shape[0] == states.shape[0]
-    ), "must predict one value per state"
+    assert (next_state_values.dim() == 1 and next_state_values.shape[0]
+            == states.shape[0]), "must predict one value per state"
 
-    # compute "target q-values" for loss - it's what's inside square parentheses in the above formula.
-    # at the last state use the simplified formula: Q(s,a) = r(s,a) since s' doesn't exist
+    # compute "target q-values" for loss -
+    # it's what's inside square parentheses in the above formula.
+    #
+    # at the last state use the simplified formula:
+    # Q(s,a) = r(s,a) since s' doesn't exist
     # you can multiply next state values by is_not_done to achieve this.
-    # target_qvalues_for_actions = <YOUR CODE>
-    target_qvalues_for_actions = (
-        rewards + gamma * next_state_values * is_not_done
-    )
+    target_qvalues_for_actions = (rewards +
+                                  gamma * next_state_values * is_not_done)
 
-    # target_qvalues_for_actions = torch.where(is_done, rewards, target_qvalues_for_actions)
+    # target_qvalues_for_actions = torch.where(
+    #   is_done, rewards, target_qvalues_for_actions)
 
     # mean squared error loss to minimize
-    loss = torch.mean(
-        (predicted_qvalues_for_actions - target_qvalues_for_actions.detach())
-        ** 2
-    )
+    loss = torch.mean((predicted_qvalues_for_actions -
+                       target_qvalues_for_actions.detach())**2)
 
     if check_shapes:
         assert (
             predicted_next_qvalues.data.dim() == 2
         ), "make sure you predicted q-values for all actions in next state"
-        assert (
-            next_state_values.data.dim() == 1
-        ), "make sure you computed V(s') as maximum over just the actions axis and not all axes"
-        assert (
-            target_qvalues_for_actions.data.dim() == 1
-        ), "there's something wrong with target q-values, they must be a vector"
+        assert (next_state_values.data.dim() == 1
+                ), "make sure you computed V(s') as maximum over\
+             just the actions axis and not all axes"
+
+        assert (target_qvalues_for_actions.data.dim() == 1
+                ), "there's something wrong with target q-values, \
+            they must be a vector"
 
     return loss
 
 
-def test_and_record_video(
-    agent, out_dir="./../../random-agent-results", greedy=True
-):
+def test_and_record_video(agent,
+                          out_dir="./../../random-agent-results",
+                          greedy=True):
     # logger setup
     logging.basicConfig()
 
@@ -321,15 +314,16 @@ def test_and_record_video(
     env = gym_tetris.TetrisEnv(state_mode="matrix")
     env.reset()
     # env = monitor.Monitor(env, directory=out_dir, force=True)
-    vid = video_recorder.VideoRecorder(
-        env=env, path=out_dir + "/tetris.mp4", enabled=True
-    )
+    vid = video_recorder.VideoRecorder(env=env,
+                                       path=out_dir + "/tetris.mp4",
+                                       enabled=True)
     stats = stats_recorder.StatsRecorder(
-        directory=out_dir, file_prefix="tetris",
+        directory=out_dir,
+        file_prefix="tetris",
     )
 
     EPISODE_COUNT = 100
-    MAX_STEPS = 200
+    # MAX_STEPS = 200
     reward = 0
     done = False
     times = []
@@ -344,18 +338,16 @@ def test_and_record_video(
         # for j in range(MAX_STEPS):
         while True:
             qvalues = agent.get_qvalues(np.asarray([ob]))
-            action = (
-                qvalues.argmax(axis=-1)[0]
-                if greedy
-                else agent.sample_actions(qvalues)[0]
-            )
+            action = (qvalues.argmax(
+                axis=-1)[0] if greedy else agent.sample_actions(qvalues)[0])
             stats.before_step(action)
             ob, reward, done, info = env.step(action)
             vid.capture_frame()
             # print(ob)
-            stats.after_step(
-                observation=ob, reward=reward, done=done, info=info
-            )
+            stats.after_step(observation=ob,
+                             reward=reward,
+                             done=done,
+                             info=info)
             time += 1
             if done:
                 # ob = env.reset()
